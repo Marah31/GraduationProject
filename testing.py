@@ -20,7 +20,6 @@ def mark_rectangle(grid, x1, y1, x2, y2, value=1):
 
 
 # Mark walkable paths
-# Mark walkable paths
 # Left rooms
 mark_rectangle(grid, 446, 309, 592, 320, value=1)
 mark_rectangle(grid, 446, 192, 592, 204, value=1)
@@ -50,7 +49,6 @@ def heuristic(a, b):
 def a_star_search(grid, start, goals):
     rows, cols = grid.shape
 
-    # Check if start point is walkable
     if grid[start[1], start[0]] != 1:
         print(f"Start point {start} is not on a walkable area!")
         return None
@@ -93,50 +91,40 @@ def a_star_search(grid, start, goals):
 
 
 # Choose a start point that we know is on a walkable area
-start_point = (456, 556)  # On the vertical corridor
+start_point = (476, 200)  # On the vertical corridor
 
-# Debugging: Check if start point is walkable
 if grid[start_point[1], start_point[0]] == 0:
     print(f"Start point {start_point} is NOT in a walkable area!")
 
-# Find path
 path = a_star_search(grid, start_point, safe_points)
 
-# Debugging: Print the found path
 print("Path:", path)
 
 # Visualization
 plt.figure(figsize=(12, 10))
-plt.imshow(map_image, alpha=0.7)  # Make base image slightly more visible
+plt.imshow(map_image, alpha=0.7)
 plt.title("A* Pathfinding Visualization")
 
-# Draw walkable areas with lower opacity
+# draw walkable areas with lower opacity
 walkable_y, walkable_x = np.where(grid == 1)
 plt.scatter(walkable_x, walkable_y, color="green", s=1, alpha=0.2, label="Walkable Areas")
 
-# Draw safe points
 for sp in safe_points:
     plt.scatter(sp[0], sp[1], color="blue", marker='*', s=200,
                 label="Safe Point" if "Safe Point" not in plt.gca().get_legend_handles_labels()[1] else "")
     plt.annotate(f'Safe Point', (sp[0], sp[1]), xytext=(5, 5),
                  textcoords='offset points', color='blue', fontweight='bold')
 
-# Draw the start point
 plt.scatter(start_point[0], start_point[1], color="yellow", s=100, label="Start Point", zorder=5)
 plt.annotate('Start', (start_point[0], start_point[1]), xytext=(5, 5),
              textcoords='offset points', color='black', fontweight='bold')
 
-# Draw the path if found
 if path:
     path_x, path_y = zip(*path)
-    # Debugging: Print path coordinates
     print("Path coordinates (x, y):", list(zip(path_x, path_y)))
-
-    # Draw path with high opacity and increased width
     plt.plot(path_x, path_y, color="red", linewidth=2, solid_capstyle='round',
              label="Shortest Path", zorder=4)
 
-    # Add direction arrows along the path
     for i in range(len(path) - 1):
         mid_x = (path_x[i] + path_x[i + 1]) / 2
         mid_y = (path_y[i] + path_y[i + 1]) / 2
