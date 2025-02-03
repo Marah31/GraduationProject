@@ -1,125 +1,129 @@
+from flask import Flask, request, jsonify
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
+from heapq import heappop, heappush
+import matplotlib.pyplot as plt
+
+app = Flask(__name__)
+
 # Load the map image
-map_image = cv2.imread('map.png', cv2.IMREAD_COLOR)
-
-# Convert the image to RGB (OpenCV loads images in BGR format)
+map_image = cv2.imread("map.png")
 map_image = cv2.cvtColor(map_image, cv2.COLOR_BGR2RGB)
-# Load the original image
-image = cv2.imread("map.png")
 
-# Define the region of interest (ROI) - the usable area of the building
-x_start, y_start = 469, 17  # Top-left corner of the building
-x_end, y_end = 741, 617    # Bottom-right corner of the building
+# Grid dimensions
+GRID_HEIGHT, GRID_WIDTH, _ = map_image.shape
+grid = np.zeros((GRID_HEIGHT, GRID_WIDTH))  # 0: obstacle, 1: walkable
 
-# Crop the image
-cropped_image = image[y_start:y_end, x_start:x_end]
+# Define nodes with IDs and positions
+nodes = {
+    1: (689, 123),
+    2: (505, 383),
+    3: (273, 622)
+}
 
-# Display the cropped image
-cv2.imshow("Cropped Building", cropped_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# Safe points (exits)
+safe_points = [(632, 54), (684, 505), (191, 552)]
 
-# Save the cropped image if needed
-cv2.imwrite("cropped_map.png", cropped_image)
-
-# Display the map using Matplotlib
-plt.imshow(map_image)
-plt.title("Building Map")
-plt.axis("off")
-plt.show()
+# Known person start point
+person_location = (476, 200)
 
 
-# Define grid size (smaller values for finer grid)
-grid_size = 20
-height, width, _ = map_image.shape
+# Function to mark walkable areas
+def mark_rectangle(grid, x1, y1, x2, y2, value=1):
+    x1, x2 = min(x1, x2), max(x1, x2)
+    y1, y2 = min(y1, y2), max(y1, y2)
+    grid[y1:y2 + 1, x1:x2 + 1] = value
 
-# Create an empty grid
-rows = height // grid_size
-cols = width // grid_size
-grid = np.zeros((rows, cols), dtype=np.int32)
 
-# Overlay the grid on the map
-for i in range(rows):
-    for j in range(cols):
-        # Define each cell's rectangle
-        start_x, start_y = j * grid_size, i * grid_size
-        end_x, end_y = (j + 1) * grid_size, (i + 1) * grid_size
-        # Check if the cell is walkable (e.g., white or light-colored)
-        cell = map_image[start_y:end_y, start_x:end_x]
-        if np.mean(cell) > 200:  # Adjust threshold based on the map
-            grid[i, j] = 0  # Walkable
-        else:
-            grid[i, j] = 1  # Obstacle
-        # Draw the grid on the map for visualization
-        cv2.rectangle(map_image, (start_x, start_y), (end_x, end_y), (255, 0, 0), 1)
+# Mark walkable paths
+mark_rectangle(grid, 446, 309, 592, 320, value=1)
+mark_rectangle(grid, 446, 192, 592, 204, value=1)
+mark_rectangle(grid, 446, 430, 592, 440, value=1)
+mark_rectangle(grid, 633, 179, 750, 187, value=1)
+mark_rectangle(grid, 592, 31, 634, 460, value=1)
+mark_rectangle(grid, 464, 458, 690, 611, value=1)
+mark_rectangle(grid, 185, 550, 464, 576, value=1)
 
-# Display the grid-overlayed map
-plt.imshow(map_image)
-plt.title("Grid Overlay")
-plt.axis("off")
-plt.show()
-import heapq
 
 # A* Algorithm
-def a_star(grid, start, goal):
-    rows, cols = grid.shape
-    open_list = []
-    heapq.heappush(open_list, (0, start))  # (cost, (x, y))
-    came_from = {}
-    g_score = {start: 0}
-    f_score = {start: heuristic(start, goal)}
-
-    while open_list:
-        _, current = heapq.heappop(open_list)
-        if current == goal:
-            return reconstruct_path(came_from, current)
-
-        for neighbor in get_neighbors(current, grid):
-            tentative_g_score = g_score[current] + 1
-            if tentative_g_score < g_score.get(neighbor, float('inf')):
-                came_from[neighbor] = current
-                g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal)
-                if neighbor not in [item[1] for item in open_list]:
-                    heapq.heappush(open_list, (f_score[neighbor], neighbor))
-    return None
-
-# Helper functions
 def heuristic(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-def get_neighbors(node, grid):
-    x, y = node
-    neighbors = []
-    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        nx, ny = x + dx, y + dy
-        if 0 <= nx < grid.shape[0] and 0 <= ny < grid.shape[1] and grid[nx, ny] == 0:
-            neighbors.append((nx, ny))
-    return neighbors
 
-def reconstruct_path(came_from, current):
-    path = [current]
-    while current in came_from:
-        current = came_from[current]
-        path.append(current)
-    return path[::-1]
-# Example start and goal points
-start = (5, 5)  # (row, col)
-goal = (15, 20)  # (row, col)
+def a_star_search(grid, start, goals):
+    rows, cols = grid.shape
+    open_set = []
+    heappush(open_set, (0, start))
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: min(heuristic(start, goal) for goal in goals)}
 
-# Run A* and get the path
-path = a_star(grid, start, goal)
+    while open_set:
+        _, current = heappop(open_set)
+        if current in goals:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            path.append(start)
+            path.reverse()
+            return path
 
-# Visualize the path
-for (row, col) in path:
-    start_x, start_y = col * grid_size, row * grid_size
-    end_x, end_y = (col + 1) * grid_size, (row + 1) * grid_size
-    cv2.rectangle(map_image, (start_x, start_y), (end_x, end_y), (0, 255, 0), -1)
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            neighbor = (current[0] + dx, current[1] + dy)
+            if (0 <= neighbor[0] < cols and 0 <= neighbor[1] < rows and grid[neighbor[1], neighbor[0]] == 1):
+                tentative_g_score = g_score[current] + 1
+                if (neighbor not in g_score or tentative_g_score < g_score[neighbor]):
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative_g_score
+                    f_score[neighbor] = tentative_g_score + min(heuristic(neighbor, goal) for goal in goals)
+                    heappush(open_set, (f_score[neighbor], neighbor))
+    return None
 
-# Display the result
-plt.imshow(map_image)
-plt.title("Shortest Path")
-plt.axis("off")
-plt.show()
+
+# Flask API endpoints
+fire_locations = {}
+
+
+@app.route('/fire-alert', methods=['POST'])
+def handle_fire_alert():
+    data = request.json
+    esp_id = data.get("esp_id")
+    location = tuple(data.get("location"))
+
+    if esp_id and location:
+        fire_locations[esp_id] = location
+        grid[max(0, location[1] - 1):min(GRID_HEIGHT, location[1] + 2),
+        max(0, location[0] - 1):min(GRID_WIDTH, location[0] + 2)] = 0
+
+        # Compute the safest path for the person
+        path = a_star_search(grid, person_location, safe_points)
+        if path:
+            visualize_paths(path)
+            return jsonify({"path": path}), 200
+        return jsonify({"error": "No safe path found"}), 404
+
+    return jsonify({"error": "Invalid data"}), 400
+
+
+def visualize_paths(path):
+    plt.figure(figsize=(12, 10))
+    plt.imshow(map_image, alpha=0.7)
+    plt.title("Pathfinding Visualization")
+
+    for esp_id, fire_position in fire_locations.items():
+        plt.scatter(fire_position[0], fire_position[1], color="red", s=200, label=f"Fire: {esp_id}")
+
+    for sp in safe_points:
+        plt.scatter(sp[0], sp[1], color="blue", marker='*', s=200, label="Safe Point")
+
+    if path:
+        path_x, path_y = zip(*path)
+        plt.plot(path_x, path_y, color="green", linewidth=2, label="Evacuation Path")
+
+    plt.legend()
+    plt.show()
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
