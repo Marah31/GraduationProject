@@ -22,16 +22,17 @@ int dangerLED = 27;
 // WiFi and Server Configuration
 const char* ssid = "Alsayed";
 const char* password = "29111999";
-const char* serverUrl = "http://192.168.1.16:5000/fire-alert";  // Fire alert endpoint
-const char* getPathUrl = "http://192.168.1.16:5000/get-path";   // Get evacuation path endpoint
+const char* serverUrl = "http://192.168.1.16:5000/fire-alert";  
+const char* getPathUrl = "http://192.168.1.16:5000/get-path";  
 
-const int HUB_ID = 1;  // Unique identifier for this hub
+const int HUB_ID = 1;  
+
+bool pathReceived = false;
+String receivedJsonPath;
 
 void setup() {
-  // Initialize Serial Monitor
   Serial.begin(115200);
-  while (!Serial)
-    ;
+  while (!Serial);
 
   pinMode(LED1, OUTPUT);
   pinMode(leftLED, OUTPUT);
@@ -69,34 +70,63 @@ void setup() {
 void sendFireAlert() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    Serial.println(" Connecting to: " + String(serverUrl));
+    Serial.println("Connecting to: " + String(serverUrl));
 
     http.begin(serverUrl);
-    http.setTimeout(10000);  // Increase timeout to 10s
+    http.setTimeout(10000);  
     http.addHeader("Content-Type", "application/json");
     http.addHeader("Connection", "keep-alive");
 
     String jsonPayload = "{\"esp_id\":\"ESP1\", \"location\":[689, 123]}";
-    Serial.println(" Sending payload: " + jsonPayload);
+    Serial.println("Sending payload: " + jsonPayload);
 
     int httpResponseCode = http.POST(jsonPayload);
 
-    Serial.print(" HTTP Response Code: ");
+    Serial.print("HTTP Response Code: ");
     Serial.println(httpResponseCode);
 
     if (httpResponseCode > 0) {
       String response = http.getString();
-      Serial.println(" Server Response: " + response);
+      Serial.println("Server Response: " + response);
+      requestEvacuationPath();  // Fetch the path after fire alert
     } else {
-      Serial.println(" Error sending POST: " + String(httpResponseCode));
-      Serial.println(" Check server URL and connection.");
+      Serial.println("Error sending POST: " + String(httpResponseCode));
     }
 
     http.end();
   } else {
-    Serial.println(" WiFi not connected, cannot send request.");
+    Serial.println("WiFi not connected, cannot send request.");
   }
 }
+
+void requestEvacuationPath() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    Serial.println("Requesting evacuation path from: " + String(getPathUrl));
+
+    http.begin(getPathUrl);
+    http.setTimeout(10000);
+    http.addHeader("Content-Type", "application/json");
+
+    int httpResponseCode = http.GET();
+
+    Serial.print("Path Request HTTP Response Code: ");
+    Serial.println(httpResponseCode);
+
+    if (httpResponseCode > 0) {
+      receivedJsonPath = http.getString();
+      Serial.println("Received Path Data: " + receivedJsonPath);
+      pathReceived = true;  // Set flag to process path
+    } else {
+      Serial.println("Error retrieving path: " + String(httpResponseCode));
+    }
+
+    http.end();
+  } else {
+    Serial.println("WiFi not connected, cannot request path.");
+  }
+}
+
 void processEvacuationPath(String jsonResponse) {
   StaticJsonDocument<1024> doc;
   DeserializationError error = deserializeJson(doc, jsonResponse);
@@ -127,9 +157,9 @@ void processEvacuationPath(String jsonResponse) {
           break;
         }
       }
-      
-      // Vertical movement would be handled similarly if needed
     }
+  } else {
+    Serial.println("Error parsing evacuation path JSON");
   }
 }
 
@@ -139,20 +169,16 @@ void loop() {
   TempAndHumidity data = dht.getTempAndHumidity();
   float temperature = data.temperature;
   float humidity = data.humidity;
-if (pathReceived) {
+
+  if (pathReceived) {
     processEvacuationPath(receivedJsonPath);
+    pathReceived = false;  // Reset after processing
   }
+
   if (infrared_value1 < 2000 || mq_value > 2000 || temperature > 50 || humidity < 30) {
     for (int i = 0; i < 3; i++) {
       Serial.println("Fire detected! Sending alert...");
       digitalWrite(LED1, HIGH);
-
-      /*digitalWrite(leftLED, HIGH);
-
-      digitalWrite(rightLED, HIGH);
-
-      digitalWrite(dangerLED, HIGH);*/
-
 
       // Send LoRa packet to receiver
       LoRa.beginPacket();
@@ -166,7 +192,7 @@ if (pathReceived) {
     delay(500);
   }
 
-  // Listen for incoming messages
+  // Listen for incoming messages from LoRa
   int packetSize = LoRa.parsePacket();
   if (packetSize) {
     while (LoRa.available()) {
