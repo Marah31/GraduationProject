@@ -30,7 +30,8 @@ bool directionReceived = false;
 String receivedJsonDirection;
 unsigned long lastRequestTime = 0;
 const unsigned long requestCooldown = 10000;  // 10 seconds cooldown
-
+unsigned long lastLoRaMessageTime = 0;  // Timestamp of last received LoRa message
+const unsigned long loRaTimeout = 10000;
 void setup() {
   Serial.begin(115200);
   while (!Serial);
@@ -69,32 +70,32 @@ void setup() {
 void sendFireAlert() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    Serial.println("\n🚀 Sending Fire Alert...");
+    Serial.println("\n Sending Fire Alert...");
 
     http.begin(fireAlertUrl);
-    http.setTimeout(15000);  // Increase timeout to 15 seconds
+    http.setTimeout(30000);  // Increase timeout to 15 seconds
     http.addHeader("Content-Type", "application/json");
 
     String jsonPayload = "{\"esp_id\":\"ESP1\"}";
-    Serial.println("📤 Payload: " + jsonPayload);
+    Serial.println(" Payload: " + jsonPayload);
 
     int httpResponseCode = http.POST(jsonPayload);
     
-    Serial.print("🔍 HTTP Response Code: ");
+    Serial.print(" HTTP Response Code: ");
     Serial.println(httpResponseCode);
 
     if (httpResponseCode > 0) {
       String response = http.getString();
-      Serial.println("✅ Server Response: " + response);
+      Serial.println(" Server Response: " + response);
       processEvacuationDirection(response);
     } else {
-      Serial.println("❌ Error sending POST: " + String(httpResponseCode));
-      Serial.println("🛑 Possible causes: Server Down, Incorrect URL, or Network Issues.");
+      Serial.println(" Error sending POST: " + String(httpResponseCode));
+      Serial.println(" Possible causes: Server Down, Incorrect URL, or Network Issues.");
     }
 
     http.end();
   } else {
-    Serial.println("⚠️ WiFi not connected, cannot send request.");
+    Serial.println(" WiFi not connected, cannot send request.");
   }
 }
 
@@ -114,17 +115,19 @@ void processEvacuationDirection(String jsonResponse) {
     // Activate LED based on received direction
     if (direction == "left") {
       digitalWrite(leftLED, HIGH);
-      Serial.println("⬅️ Left LED ON");
+      Serial.println(" Left LED ON");
+      delay(5000);
     } else if (direction == "right") {
       digitalWrite(rightLED, HIGH);
-      Serial.println("➡️ Right LED ON");
+      Serial.println(" Right LED ON");
+      delay(5000);
     } else {
       digitalWrite(dangerLED, HIGH);
-      Serial.println("⚠️ No Safe Path! Danger LED ON");
+      Serial.println(" No Safe Path! Danger LED ON");
     }
     directionReceived = true;
   } else {
-    Serial.println("❌ Error parsing JSON or missing 'direction' key");
+    Serial.println(" Error parsing JSON or missing 'direction' key");
   }
 }
 
@@ -138,63 +141,59 @@ void loop() {
   float temperature = data.temperature;
   float humidity = data.humidity;
 
-  // **DEBUG: Print Sensor Values**
-  /*Serial.print("\n🔥 Sensor Readings -> ");
-  Serial.print("Flame: "); Serial.print(infrared_value1);
-  Serial.print(" | Gas: "); Serial.print(mq_value);
-  Serial.print(" | Temp: "); Serial.print(temperature);
-  Serial.print(" | Humidity: "); Serial.println(humidity);*/
-
-  // ✅ **RESET ESP WHEN FIRE IS GONE**  
+  //  **RESET ESP WHEN FIRE IS GONE**  
   if (fireDetected && (infrared_value1 >= 2000 && mq_value <= 2000 || (temperature <= 50 && humidity >= 30))) {
-    Serial.println("✅ Fire Cleared! Resetting System.");
-    
-    // RESET FIRE DETECTION SYSTEM
-    fireDetected = false;
-    directionReceived = false;
+    if (millis() - lastLoRaMessageTime > loRaTimeout) {  // Ensure no recent LoRa messages
+        Serial.println(" Fire Cleared! Resetting System.");    
+        // RESET FIRE DETECTION SYSTEM
+        fireDetected = false;
+        directionReceived = false;
 
-    // TURN OFF ALL LEDs
-    digitalWrite(LED1, LOW);
-    digitalWrite(leftLED, LOW);
-    digitalWrite(rightLED, LOW);
-    digitalWrite(dangerLED, LOW);
+        // TURN OFF ALL LEDs
+        digitalWrite(LED1, LOW);
+        digitalWrite(leftLED, LOW);
+        digitalWrite(rightLED, LOW);
+        digitalWrite(dangerLED, LOW);
 
-    delay(500);  // Small delay to prevent false triggering
+        delay(500);  // Small delay to prevent false triggering
+      }
   }
 
-  // ✅ **IF NEW FIRE DETECTED AFTER RESET, PROCESS IT**
+  //  **IF NEW FIRE DETECTED AFTER RESET, PROCESS IT**
   if (!fireDetected && (infrared_value1 < 2000 || mq_value > 2000 || temperature > 50 || humidity < 30)) {
     fireDetected = true;  // Mark fire detected
     directionReceived = false; // Reset direction reception flag
 
     for (int i = 0; i < 5; i++) {
-      Serial.println("🔥 Fire detected! Sending alert...");
+      Serial.println(" Fire detected! Sending alert...");
       digitalWrite(LED1, HIGH);
       LoRa.beginPacket();
       LoRa.print("N1:fire");
       LoRa.endPacket();
       delay(500);
     }
-
+    delay(5000);
     sendFireAlert();  // Send the alert and request direction at the same time
   } else {
     digitalWrite(LED1, LOW);
     delay(500);
   }
 
-  // ✅ **Listen for LoRa Messages (Fire Alerts from Other Nodes)**
+  //  **Listen for LoRa Messages (Fire Alerts from Other Nodes)**
   int packetSize = LoRa.parsePacket();
-  while (packetSize) {
+  if (packetSize) {
     String LoRaData = LoRa.readString();
     Serial.print("Received via LoRa: ");
     Serial.println(LoRaData);
     digitalWrite(LED1, HIGH);
     delay(2000);
-
+    lastLoRaMessageTime = millis();  
     if (LoRaData.startsWith("N2:fire")) {
-      Serial.println("🔥 Fire detected by Node 2!");
+      Serial.println(" Fire detected by Node 2!");
       digitalWrite(LED1, HIGH);
       delay(2000);
+      delay(5000);
+      sendFireAlert();
     }
     digitalWrite(LED1, LOW);
     delay(1000);

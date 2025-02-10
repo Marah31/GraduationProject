@@ -60,7 +60,8 @@ void onDataReceived(const esp_now_recv_info *info, const uint8_t *incomingData, 
     Serial.println("Fire Detected by node2 !");
     lastMessageTime = millis();  // Reset timer on receiving a message
     digitalWrite(LED, HIGH);     // Turn on LED
-    delay(2000);                 // LED stays on for 2 seconds
+    //delay(2000);                 // LED stays on for 2 seconds
+    sendFireAlert();
   } else {
     digitalWrite(LED, LOW);
     delay(500);
@@ -130,32 +131,32 @@ void setup() {
 void sendFireAlert() {
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    Serial.println("\n🚀 Sending Fire Alert...");
+    Serial.println("\n Sending Fire Alert...");
 
     http.begin(fireAlertUrl);
-    http.setTimeout(15000);  // Increase timeout to 15 seconds
+    http.setTimeout(30000);  // Increase timeout to 15 seconds
     http.addHeader("Content-Type", "application/json");
 
     String jsonPayload = "{\"esp_id\":\"ESP3\"}";
-    Serial.println("📤 Payload: " + jsonPayload);
+    Serial.println(" Payload: " + jsonPayload);
 
     int httpResponseCode = http.POST(jsonPayload);
     
-    Serial.print("🔍 HTTP Response Code: ");
+    Serial.print(" HTTP Response Code: ");
     Serial.println(httpResponseCode);
 
     if (httpResponseCode > 0) {
       String response = http.getString();
-      Serial.println("✅ Server Response: " + response);
+      Serial.println(" Server Response: " + response);
       processEvacuationDirection(response);
     } else {
-      Serial.println("❌ Error sending POST: " + String(httpResponseCode));
-      Serial.println("🛑 Possible causes: Server Down, Incorrect URL, or Network Issues.");
+      Serial.println(" Error sending POST: " + String(httpResponseCode));
+      Serial.println(" Possible causes: Server Down, Incorrect URL, or Network Issues.");
     }
 
     http.end();
   } else {
-    Serial.println("⚠️ WiFi not connected, cannot send request.");
+    Serial.println(" WiFi not connected, cannot send request.");
   }
 }
 
@@ -175,17 +176,19 @@ void processEvacuationDirection(String jsonResponse) {
     // Activate LED based on received direction
     if (direction == "left") {
       digitalWrite(leftLED, HIGH);
-      Serial.println("⬅️ Left LED ON");
+      Serial.println("Left LED ON");
+      delay(5000);
     } else if (direction == "right") {
       digitalWrite(rightLED, HIGH);
-      Serial.println("➡️ Right LED ON");
+      Serial.println("Right LED ON");
+      delay(5000);
     } else {
       digitalWrite(dangerLED, HIGH);
-      Serial.println("⚠️ No Safe Path! Danger LED ON");
+      Serial.println(" No Safe Path! Danger LED ON");
     }
     directionReceived = true;
   } else {
-    Serial.println("❌ Error parsing JSON or missing 'direction' key");
+    Serial.println(" Error parsing JSON or missing 'direction' key");
   }
 }
 
@@ -197,7 +200,7 @@ void loop() {
   float temperature = data.temperature;
   float humidity = data.humidity;
   if (fireDetected && (infrared_value >= 2000 && mq_value <= 2000 || (temperature <= 50 && humidity >= 30))) {
-      Serial.println("✅ Fire Cleared! Resetting System.");
+      Serial.println(" Fire Cleared! Resetting System.");
       
       // RESET FIRE DETECTION SYSTEM
       fireDetected = false;
@@ -238,6 +241,9 @@ void loop() {
   // Turn off LED if no message is received for a long time
   if (millis() - lastMessageTime > timeout) {
     digitalWrite(LED, LOW);
+    digitalWrite(leftLED, LOW);
+    digitalWrite(rightLED, LOW);
+    digitalWrite(dangerLED, LOW);
     //Serial.println("No message timeout: LED OFF");
   }
 }
